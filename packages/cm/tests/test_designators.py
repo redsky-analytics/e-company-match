@@ -1,6 +1,6 @@
 """Tests for designator handling."""
 
-from bizmatch.designators import canonicalize_token, is_designator, strip_designators
+from cm.designators import canonicalize_token, is_designator, strip_designators
 
 
 def test_common_designators():

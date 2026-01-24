@@ -9,7 +9,7 @@ from typing import Protocol
 import numpy as np
 import structlog
 
-from bizmatch.config import EmbeddingConfig
+from cm.config import EmbeddingConfig
 
 log = structlog.get_logger()
 

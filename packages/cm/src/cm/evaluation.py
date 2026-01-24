@@ -7,9 +7,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bizmatch.config import MatchConfig
-from bizmatch.matcher import Matcher
-from bizmatch.types import MatchResult
+from cm.config import MatchConfig
+from cm.matcher import Matcher
+from cm.types import MatchResult
 
 
 @dataclass

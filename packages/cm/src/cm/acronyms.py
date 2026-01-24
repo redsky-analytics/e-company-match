@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from bizmatch.config import AcronymConfig
+from cm.config import AcronymConfig
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 

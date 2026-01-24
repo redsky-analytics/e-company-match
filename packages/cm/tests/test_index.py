@@ -1,8 +1,8 @@
 """Tests for the blocking index and candidate retrieval."""
 
-from bizmatch.config import CandidateConfig
-from bizmatch.index import BlockingIndex
-from bizmatch.normalize import normalize
+from cm.config import CandidateConfig
+from cm.index import BlockingIndex
+from cm.normalize import normalize
 
 
 def test_build_and_retrieve():

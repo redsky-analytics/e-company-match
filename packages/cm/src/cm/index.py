@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from bizmatch.config import CandidateConfig
-from bizmatch.types import Candidate, NormalizedName
+from cm.config import CandidateConfig
+from cm.types import Candidate, NormalizedName
 
 
 class BlockingIndex:

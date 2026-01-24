@@ -5,10 +5,10 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from bizmatch.acronyms import generate_acronym, is_collision, normalize_acronym_input
-from bizmatch.config import MatchConfig
-from bizmatch.designators import canonicalize_token, strip_designators
-from bizmatch.types import NormalizedName
+from cm.acronyms import generate_acronym, is_collision, normalize_acronym_input
+from cm.config import MatchConfig
+from cm.designators import canonicalize_token, strip_designators
+from cm.types import NormalizedName
 
 
 def normalize(name: str, config: MatchConfig | None = None) -> NormalizedName:
@@ -159,5 +159,5 @@ def _generate_blocking_keys(
 
 
 def _get_designator_set() -> set[str]:
-    from bizmatch.designators import DESIGNATORS
+    from cm.designators import DESIGNATORS
     return DESIGNATORS

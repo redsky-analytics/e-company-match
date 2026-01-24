@@ -6,7 +6,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "structlog>=24.0",
+    "cm",
 ]
+
+[tool.uv.sources]
+cm = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*"]

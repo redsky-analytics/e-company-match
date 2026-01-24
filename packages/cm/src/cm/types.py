@@ -1,4 +1,4 @@
-"""Core types for the bizmatch company name matching system."""
+"""Core types for the cm company name matching system."""
 
 from __future__ import annotations
 

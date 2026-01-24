@@ -1,4 +1,4 @@
-"""Configuration for the bizmatch company name matching system."""
+"""Configuration for the cm company name matching system."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class LLMConfig:
 class EmbeddingConfig:
     enabled: bool = False
     ann_neighbors: int = 100
-    cache_dir: str = ".bizmatch_cache/embeddings"
+    cache_dir: str = ".cm_cache/embeddings"
     batch_size: int = 100
 
 

@@ -8,8 +8,8 @@ from typing import Protocol
 
 import structlog
 
-from bizmatch.config import LLMConfig
-from bizmatch.types import Decision, LLMResponse, NormalizedName, ScoredCandidate
+from cm.config import LLMConfig
+from cm.types import Decision, LLMResponse, NormalizedName, ScoredCandidate
 
 log = structlog.get_logger()
 

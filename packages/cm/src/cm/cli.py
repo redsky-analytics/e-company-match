@@ -3,7 +3,7 @@
 import argparse
 
 import pandas as pd
-from bizmatch import Matcher
+from cm.matcher import Matcher
 
 
 def cmd_match(args: argparse.Namespace) -> None:

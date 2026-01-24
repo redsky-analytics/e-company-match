@@ -6,7 +6,7 @@ import csv
 import json
 from pathlib import Path
 
-from bizmatch.types import MatchResult
+from cm.types import MatchResult
 
 
 def read_names(path: str | Path, name_column: str = "name", id_column: str | None = "id") -> list[tuple[int, str]]:

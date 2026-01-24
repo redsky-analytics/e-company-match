@@ -74,7 +74,7 @@ Constraints:
 ## 3) Package Layout
 
 ```
-bizmatch/
+cm/
   config.py
   types.py
   normalize.py

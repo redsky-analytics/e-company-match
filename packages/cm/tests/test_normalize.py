@@ -1,7 +1,7 @@
 """Tests for the normalization pipeline."""
 
-from bizmatch.config import MatchConfig
-from bizmatch.normalize import normalize
+from cm.config import MatchConfig
+from cm.normalize import normalize
 
 
 def test_basic_normalization():

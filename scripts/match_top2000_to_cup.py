@@ -1,7 +1,7 @@
 """Match company names from top_2000_unmapped column A against CUP_raw_data CUP_NAME."""
 
 import pandas as pd
-from bizmatch import Matcher
+from cm import Matcher
 
 # Read data
 top = pd.read_excel("localdata/top_2000_unmapped.xlsx")

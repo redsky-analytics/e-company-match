@@ -1,7 +1,7 @@
 """Tests for the end-to-end matcher."""
 
-from bizmatch.config import MatchConfig
-from bizmatch.matcher import Matcher
+from cm.config import MatchConfig
+from cm.matcher import Matcher
 
 
 def test_exact_match():

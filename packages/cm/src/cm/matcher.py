@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import structlog
 
-from bizmatch.config import MatchConfig
-from bizmatch.embeddings import EmbeddingIndex, EmbeddingProvider
-from bizmatch.index import BlockingIndex
-from bizmatch.llm_arbiter import LLMArbiter, LLMProvider
-from bizmatch.normalize import normalize
-from bizmatch.scoring import score_pair
-from bizmatch.types import MatchResult, NormalizedName, ScoredCandidate
+from cm.config import MatchConfig
+from cm.embeddings import EmbeddingIndex, EmbeddingProvider
+from cm.index import BlockingIndex
+from cm.llm_arbiter import LLMArbiter, LLMProvider
+from cm.normalize import normalize
+from cm.scoring import score_pair
+from cm.types import MatchResult, NormalizedName, ScoredCandidate
 
 log = structlog.get_logger()
 

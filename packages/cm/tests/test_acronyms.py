@@ -1,12 +1,12 @@
 """Tests for acronym handling."""
 
-from bizmatch.acronyms import (
+from cm.acronyms import (
     acronym_relation,
     generate_acronym,
     is_collision,
     normalize_acronym_input,
 )
-from bizmatch.config import AcronymConfig
+from cm.config import AcronymConfig
 
 
 def test_generate_acronym():

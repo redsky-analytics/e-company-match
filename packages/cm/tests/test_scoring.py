@@ -1,8 +1,8 @@
 """Tests for the deterministic scoring module."""
 
-from bizmatch.config import MatchConfig
-from bizmatch.normalize import normalize
-from bizmatch.scoring import score_pair
+from cm.config import MatchConfig
+from cm.normalize import normalize
+from cm.scoring import score_pair
 
 
 def test_identical_names_high_score():

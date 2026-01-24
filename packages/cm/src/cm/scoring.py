@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from rapidfuzz import fuzz
 
-from bizmatch.acronyms import acronym_relation
-from bizmatch.config import MatchConfig
-from bizmatch.designators import is_designator
-from bizmatch.types import NormalizedName, ScoredCandidate
+from cm.acronyms import acronym_relation
+from cm.config import MatchConfig
+from cm.designators import is_designator
+from cm.types import NormalizedName, ScoredCandidate
 
 
 def _effective_core(name: NormalizedName) -> tuple[list[str], str]:

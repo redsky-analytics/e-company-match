@@ -1,6 +1,7 @@
 export interface NameEntry {
   name: string
   id: string | null
+  match_type: 'CM' | 'AM' | null  // CM = Custom/Manual, AM = Automatic
 }
 
 export interface ManualMatch {
@@ -9,6 +10,14 @@ export interface ManualMatch {
   b_id: string | null
   created_at: string
   notes: string
+}
+
+export interface AutoMatch {
+  a_names: string[]
+  b_name: string
+  b_id: string | null
+  decision: string
+  score: number
 }
 
 export async function fetchANames(query: string = ''): Promise<string[]> {
@@ -29,6 +38,13 @@ export async function fetchMatches(): Promise<ManualMatch[]> {
   const res = await fetch('/api/matches')
   if (!res.ok) throw new Error('Failed to fetch matches')
   return res.json()
+}
+
+export async function fetchAutoMatch(bName: string): Promise<AutoMatch | null> {
+  const res = await fetch(`/api/auto-matches/${encodeURIComponent(bName)}`)
+  if (!res.ok) return null
+  const data = await res.json()
+  return data || null
 }
 
 export async function createMatch(

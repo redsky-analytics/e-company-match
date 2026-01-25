@@ -361,6 +361,7 @@ def cmd_grep(args: argparse.Namespace) -> None:
         top=args.top,
         cup=args.cup,
         matches=args.matches,
+        results=args.results,
         port=args.port,
     )
 
@@ -368,6 +369,7 @@ def cmd_grep(args: argparse.Namespace) -> None:
         top_path=args.top,
         cup_path=args.cup,
         matches_path=args.matches,
+        results_path=args.results,
     )
 
     url = f"http://localhost:{args.port}"
@@ -518,6 +520,7 @@ def main() -> None:
     grep_parser.add_argument("--top", default="localdata/top_2000_unmapped.xlsx", help="Path to top 2000 file")
     grep_parser.add_argument("--cup", default="localdata/CUP_raw_data.xlsx", help="Path to CUP raw data file")
     grep_parser.add_argument("--matches", default="localdata/manual_matches.json", help="Path to manual matches file")
+    grep_parser.add_argument("--results", default="localdata/matching_results.xlsx", help="Path to matching results file (for showing automatic matches)")
     grep_parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
     grep_parser.set_defaults(func=cmd_grep)
 

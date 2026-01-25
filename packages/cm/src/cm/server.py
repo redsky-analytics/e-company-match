@@ -39,12 +39,24 @@ class NameEntry(BaseModel):
 
     name: str
     id: str | None = None
+    match_type: str | None = None  # "CM" for manual, "AM" for automatic
+
+
+class AutoMatchResponse(BaseModel):
+    """Response for automatic matches grouped by B name."""
+
+    b_name: str
+    b_id: str | None
+    a_names: list[str]
+    decision: str
+    score: float
 
 
 def create_app(
     top_path: str,
     cup_path: str,
     matches_path: str,
+    results_path: str | None = None,
 ) -> FastAPI:
     """Create the FastAPI application."""
     app = FastAPI(title="CM Grep UI")
@@ -70,6 +82,35 @@ def create_app(
     store = ManualMatchStore(Path(matches_path))
     store.load()
 
+    # Load automatic matches from results file if it exists
+    auto_matches: dict[str, AutoMatchResponse] = {}  # b_name -> AutoMatchResponse
+    if results_path and Path(results_path).exists():
+        log.info("loading_auto_matches", path=results_path)
+        results_df = pd.read_excel(results_path)
+        # Group by matched_CUP_NAME for MATCH decisions (not MANUAL_MATCH)
+        for _, row in results_df.iterrows():
+            if row.get("decision") == "MATCH" and pd.notna(row.get("matched_CUP_NAME")):
+                b_name = str(row["matched_CUP_NAME"])
+                b_id = str(row["matched_CUP_ID"]) if pd.notna(row.get("matched_CUP_ID")) else None
+                a_name = str(row["A_name"])
+                score = float(row["score"]) if pd.notna(row.get("score")) else 0.0
+
+                if b_name not in auto_matches:
+                    auto_matches[b_name] = AutoMatchResponse(
+                        b_name=b_name,
+                        b_id=b_id,
+                        a_names=[],
+                        decision="MATCH",
+                        score=score,
+                    )
+                if a_name not in auto_matches[b_name].a_names:
+                    auto_matches[b_name].a_names.append(a_name)
+        log.info("auto_matches_loaded", count=len(auto_matches))
+
+    # Build sets for quick lookup of which B names have matches
+    manual_b_names = {m.b_name for m in store.get_all()}
+    auto_b_names = set(auto_matches.keys())
+
     # Determine UI dist path
     ui_dist_path = Path(__file__).parent.parent.parent / "ui" / "dist"
 
@@ -84,10 +125,32 @@ def create_app(
     @app.get("/api/names/b")
     async def get_b_names(q: str = "") -> list[NameEntry]:
         """Get B names with IDs, optionally filtered by query."""
+        # Refresh manual B names set (in case matches were added/removed)
+        current_manual_b = {m.b_name for m in store.get_all()}
+
+        def make_entry(e: dict[str, Any]) -> NameEntry:
+            name = e["name"]
+            match_type = None
+            if name in current_manual_b:
+                match_type = "CM"  # Custom/Manual match
+            elif name in auto_b_names:
+                match_type = "AM"  # Automatic match
+            return NameEntry(name=name, id=e["id"], match_type=match_type)
+
         if not q:
-            return [NameEntry(**e) for e in b_entries]
+            return [make_entry(e) for e in b_entries]
         q_lower = q.lower()
-        return [NameEntry(**e) for e in b_entries if q_lower in e["name"].lower()]
+        return [make_entry(e) for e in b_entries if q_lower in e["name"].lower()]
+
+    @app.get("/api/auto-matches")
+    async def get_auto_matches() -> list[AutoMatchResponse]:
+        """Get all automatic matches from results file."""
+        return list(auto_matches.values())
+
+    @app.get("/api/auto-matches/{b_name}")
+    async def get_auto_match(b_name: str) -> AutoMatchResponse | None:
+        """Get automatic match for a specific B name."""
+        return auto_matches.get(b_name)
 
     @app.get("/api/matches")
     async def get_matches() -> list[MatchResponse]:

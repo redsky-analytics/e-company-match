@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   fetchANames,
   fetchBNames,
   fetchMatches,
+  fetchAutoMatch,
   createMatch,
   deleteMatch,
   type NameEntry,
   type ManualMatch,
+  type AutoMatch,
 } from './api'
 
 const styles = {
@@ -77,6 +79,9 @@ const styles = {
   listItemSelected: {
     background: '#e8f4ff',
   } as React.CSSProperties,
+  listItemAutoSelected: {
+    background: '#fff8e8',
+  } as React.CSSProperties,
   checkbox: {
     width: '16px',
     height: '16px',
@@ -143,6 +148,21 @@ const styles = {
     fontSize: '12px',
     color: '#666',
   } as React.CSSProperties,
+  badge: {
+    padding: '2px 6px',
+    borderRadius: '4px',
+    fontSize: '10px',
+    fontWeight: 'bold',
+    marginLeft: '8px',
+  } as React.CSSProperties,
+  badgeCM: {
+    background: '#0066cc',
+    color: 'white',
+  } as React.CSSProperties,
+  badgeAM: {
+    background: '#ff9900',
+    color: 'white',
+  } as React.CSSProperties,
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -167,6 +187,14 @@ export default function App() {
   const [selectedA, setSelectedA] = useState<Set<string>>(new Set())
   const [selectedB, setSelectedB] = useState<NameEntry | null>(null)
   const [editingMatchIndex, setEditingMatchIndex] = useState<number | null>(null)
+
+  // For viewing automatic matches (read-only)
+  const [viewingAutoMatch, setViewingAutoMatch] = useState<AutoMatch | null>(null)
+
+  // Filter toggle for A names list
+  const [showOnlyMatched, setShowOnlyMatched] = useState(false)
+  const aListRef = useRef<HTMLDivElement>(null)
+  const firstMatchRef = useRef<HTMLDivElement>(null)
 
   const [loading, setLoading] = useState(true)
 
@@ -207,28 +235,43 @@ export default function App() {
     })
   }, [])
 
-  const handleBSelect = useCallback((entry: NameEntry) => {
+  const handleBSelect = useCallback(async (entry: NameEntry) => {
     // If clicking the same B name, deselect it
     if (selectedB?.name === entry.name) {
       setSelectedB(null)
       setSelectedA(new Set())
       setEditingMatchIndex(null)
+      setViewingAutoMatch(null)
       return
     }
 
     // Select the B name
     setSelectedB(entry)
+    setViewingAutoMatch(null)
 
-    // Check if this B name has an existing match
+    // Check if this B name has a manual match first
     const matchIndex = matches.findIndex((m) => m.b_name === entry.name)
     if (matchIndex !== -1) {
-      // Load the A names from the existing match
+      // Load the A names from the existing manual match
       setSelectedA(new Set(matches[matchIndex].a_names))
       setEditingMatchIndex(matchIndex)
+      return
+    }
+
+    // No manual match, check for automatic match
+    setEditingMatchIndex(null)
+
+    if (entry.match_type === 'AM') {
+      // Fetch automatic match details and pre-select the A names for editing
+      const autoMatch = await fetchAutoMatch(entry.name)
+      if (autoMatch) {
+        setViewingAutoMatch(autoMatch)
+        setSelectedA(new Set(autoMatch.a_names))
+      } else {
+        setSelectedA(new Set())
+      }
     } else {
-      // No existing match, clear A selection
       setSelectedA(new Set())
-      setEditingMatchIndex(null)
     }
   }, [selectedB, matches])
 
@@ -246,21 +289,30 @@ export default function App() {
         selectedB.name,
         selectedB.id
       )
-      const newMatches = await fetchMatches()
+      const [newMatches, newBNames] = await Promise.all([
+        fetchMatches(),
+        fetchBNames(debouncedSearch),
+      ])
       setMatches(newMatches)
+      setBNames(newBNames)
       setSelectedA(new Set())
       setSelectedB(null)
       setEditingMatchIndex(null)
+      setViewingAutoMatch(null)
     } catch (err) {
       console.error('Failed to create match:', err)
     }
-  }, [selectedA, selectedB, editingMatchIndex])
+  }, [selectedA, selectedB, editingMatchIndex, debouncedSearch])
 
   const handleDeleteMatch = useCallback(async (index: number) => {
     try {
       await deleteMatch(index)
-      const newMatches = await fetchMatches()
+      const [newMatches, newBNames] = await Promise.all([
+        fetchMatches(),
+        fetchBNames(debouncedSearch),
+      ])
       setMatches(newMatches)
+      setBNames(newBNames)
       // Clear editing state if we deleted the match being edited
       if (editingMatchIndex === index) {
         setEditingMatchIndex(null)
@@ -270,13 +322,14 @@ export default function App() {
     } catch (err) {
       console.error('Failed to delete match:', err)
     }
-  }, [editingMatchIndex])
+  }, [editingMatchIndex, debouncedSearch])
 
   const handleEditMatch = useCallback((match: ManualMatch, index: number) => {
     // Load the match into the selection state for editing
     setSelectedA(new Set(match.a_names))
-    setSelectedB({ name: match.b_name, id: match.b_id })
+    setSelectedB({ name: match.b_name, id: match.b_id, match_type: 'CM' })
     setEditingMatchIndex(index)
+    setViewingAutoMatch(null)
   }, [])
 
   const canLink = selectedA.size > 0 && selectedB !== null
@@ -288,9 +341,33 @@ export default function App() {
     return set
   }, [matches])
 
-  const matchedBNames = useMemo(() => {
-    return new Set(matches.map((m) => m.b_name))
-  }, [matches])
+  // A names that are part of the currently viewed auto match
+  const autoMatchedANames = useMemo(() => {
+    if (!viewingAutoMatch) return new Set<string>()
+    return new Set(viewingAutoMatch.a_names)
+  }, [viewingAutoMatch])
+
+  // Combined set of relevant A names (selected or auto-matched)
+  const relevantANames = useMemo(() => {
+    const set = new Set<string>(selectedA)
+    autoMatchedANames.forEach((n) => set.add(n))
+    return set
+  }, [selectedA, autoMatchedANames])
+
+  // Filtered A names list
+  const displayedANames = useMemo(() => {
+    if (showOnlyMatched && relevantANames.size > 0) {
+      return aNames.filter((n) => relevantANames.has(n))
+    }
+    return aNames
+  }, [aNames, showOnlyMatched, relevantANames])
+
+  // Auto-scroll to first match when showing full list
+  useEffect(() => {
+    if (!showOnlyMatched && relevantANames.size > 0 && firstMatchRef.current) {
+      firstMatchRef.current.scrollIntoView({ block: 'start', behavior: 'auto' })
+    }
+  }, [showOnlyMatched, relevantANames])
 
   return (
     <div style={styles.container}>
@@ -314,34 +391,65 @@ export default function App() {
             <span style={styles.selectionInfo}>
               {loading ? 'Loading...' : `${aNames.length} results`}
               {selectedA.size > 0 && ` | ${selectedA.size} selected`}
+              {viewingAutoMatch && ` | viewing ${viewingAutoMatch.a_names.length} auto-matched`}
+              {relevantANames.size > 0 && (
+                <label style={{ marginLeft: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={showOnlyMatched}
+                    onChange={(e) => setShowOnlyMatched(e.target.checked)}
+                    style={{ marginRight: '4px', cursor: 'pointer' }}
+                  />
+                  Filter
+                </label>
+              )}
             </span>
           </div>
-          <div style={styles.list}>
-            {aNames.map((name, idx) => (
-              <div
-                key={`a-${idx}-${name}`}
-                style={{
-                  ...styles.listItem,
-                  ...(selectedA.has(name) ? styles.listItemSelected : {}),
-                  opacity: matchedANames.has(name) ? 0.5 : 1,
-                }}
-                onClick={() => handleAToggle(name)}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedA.has(name)}
-                  readOnly
-                  style={{ ...styles.checkbox, pointerEvents: 'none' }}
-                />
-                <span>{name}</span>
-                {matchedANames.has(name) && (
-                  <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#999' }}>
-                    (matched)
-                  </span>
-                )}
-              </div>
-            ))}
-            {aNames.length === 0 && !loading && (
+          <div style={styles.list} ref={aListRef}>
+            {(() => {
+              let firstMatchFound = false
+              return displayedANames.map((name, idx) => {
+                const isSelected = selectedA.has(name)
+                const isAutoMatched = autoMatchedANames.has(name)
+                const isManualMatched = matchedANames.has(name)
+                const isRelevant = relevantANames.has(name)
+
+                // Assign ref to first relevant item
+                const isFirstMatch = isRelevant && !firstMatchFound
+                if (isFirstMatch) firstMatchFound = true
+
+                return (
+                  <div
+                    key={`a-${idx}-${name}`}
+                    ref={isFirstMatch ? firstMatchRef : undefined}
+                    style={{
+                      ...styles.listItem,
+                      ...(isSelected ? styles.listItemSelected : {}),
+                      ...(isAutoMatched && !isSelected ? styles.listItemAutoSelected : {}),
+                      opacity: isManualMatched && !isSelected && !isAutoMatched ? 0.5 : 1,
+                    }}
+                    onClick={() => handleAToggle(name)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    readOnly
+                    style={{ ...styles.checkbox, pointerEvents: 'none' }}
+                  />
+                  <span>{name}</span>
+                  {isAutoMatched && !isSelected && (
+                    <span style={{ ...styles.badge, ...styles.badgeAM }}>AM</span>
+                  )}
+                  {isManualMatched && !isAutoMatched && !isSelected && (
+                    <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#999' }}>
+                      (matched)
+                    </span>
+                  )}
+                  </div>
+                )
+              })
+            })()}
+            {displayedANames.length === 0 && !loading && (
               <div style={styles.emptyState}>No results</div>
             )}
           </div>
@@ -362,7 +470,6 @@ export default function App() {
                 style={{
                   ...styles.listItem,
                   ...(selectedB?.name === entry.name ? styles.listItemSelected : {}),
-                  opacity: matchedBNames.has(entry.name) ? 0.5 : 1,
                 }}
                 onClick={() => handleBSelect(entry)}
               >
@@ -373,6 +480,16 @@ export default function App() {
                   style={{ ...styles.radio, pointerEvents: 'none' }}
                 />
                 <span>{entry.name}</span>
+                {entry.match_type && (
+                  <span
+                    style={{
+                      ...styles.badge,
+                      ...(entry.match_type === 'CM' ? styles.badgeCM : styles.badgeAM),
+                    }}
+                  >
+                    {entry.match_type}
+                  </span>
+                )}
                 {entry.id !== null && (
                   <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#999' }}>
                     #{entry.id}
@@ -391,11 +508,17 @@ export default function App() {
         style={{
           ...styles.linkButton,
           ...(canLink ? {} : styles.linkButtonDisabled),
+          ...(viewingAutoMatch && canLink ? { background: '#ff9900' } : {}),
         }}
         onClick={handleLink}
         disabled={!canLink}
       >
-        {editingMatchIndex !== null ? 'Update' : 'Link'} Selected ({selectedA.size} A names to {selectedB?.name || '...'})
+        {viewingAutoMatch
+          ? `Override Auto Match (score: ${viewingAutoMatch.score.toFixed(4)}) with Custom Match`
+          : editingMatchIndex !== null
+          ? 'Update'
+          : 'Link'}{' '}
+        ({selectedA.size} A names to {selectedB?.name || '...'})
       </button>
 
       <div style={styles.matchesPanel}>

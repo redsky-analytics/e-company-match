@@ -6,6 +6,7 @@ import {
   fetchAutoMatch,
   createMatch,
   deleteMatch,
+  finalizeMatches,
   type NameEntry,
   type ManualMatch,
   type AutoMatch,
@@ -177,8 +178,14 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function App() {
+  // Search mode: unified or split
+  const [splitSearch, setSplitSearch] = useState(false)
   const [search, setSearch] = useState('')
+  const [searchA, setSearchA] = useState('')
+  const [searchB, setSearchB] = useState('')
   const debouncedSearch = useDebounce(search, 200)
+  const debouncedSearchA = useDebounce(searchA, 200)
+  const debouncedSearchB = useDebounce(searchB, 200)
 
   const [aNames, setANames] = useState<string[]>([])
   const [bNames, setBNames] = useState<NameEntry[]>([])
@@ -197,6 +204,14 @@ export default function App() {
   const firstMatchRef = useRef<HTMLDivElement>(null)
 
   const [loading, setLoading] = useState(true)
+  const [finalizeStatus, setFinalizeStatus] = useState<{
+    message: string
+    downloads?: { name: string; url: string }[]
+  } | null>(null)
+
+  // Effective search queries based on mode
+  const effectiveSearchA = splitSearch ? debouncedSearchA : debouncedSearch
+  const effectiveSearchB = splitSearch ? debouncedSearchB : debouncedSearch
 
   // Load data on search change
   useEffect(() => {
@@ -204,8 +219,8 @@ export default function App() {
       setLoading(true)
       try {
         const [a, b] = await Promise.all([
-          fetchANames(debouncedSearch),
-          fetchBNames(debouncedSearch),
+          fetchANames(effectiveSearchA),
+          fetchBNames(effectiveSearchB),
         ])
         setANames(a)
         setBNames(b)
@@ -216,7 +231,7 @@ export default function App() {
       }
     }
     loadData()
-  }, [debouncedSearch])
+  }, [effectiveSearchA, effectiveSearchB])
 
   // Load matches on mount
   useEffect(() => {
@@ -291,7 +306,7 @@ export default function App() {
       )
       const [newMatches, newBNames] = await Promise.all([
         fetchMatches(),
-        fetchBNames(debouncedSearch),
+        fetchBNames(effectiveSearchB),
       ])
       setMatches(newMatches)
       setBNames(newBNames)
@@ -302,14 +317,14 @@ export default function App() {
     } catch (err) {
       console.error('Failed to create match:', err)
     }
-  }, [selectedA, selectedB, editingMatchIndex, debouncedSearch])
+  }, [selectedA, selectedB, editingMatchIndex, effectiveSearchB])
 
   const handleDeleteMatch = useCallback(async (index: number) => {
     try {
       await deleteMatch(index)
       const [newMatches, newBNames] = await Promise.all([
         fetchMatches(),
-        fetchBNames(debouncedSearch),
+        fetchBNames(effectiveSearchB),
       ])
       setMatches(newMatches)
       setBNames(newBNames)
@@ -322,7 +337,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to delete match:', err)
     }
-  }, [editingMatchIndex, debouncedSearch])
+  }, [editingMatchIndex, effectiveSearchB])
 
   const handleEditMatch = useCallback((match: ManualMatch, index: number) => {
     // Load the match into the selection state for editing
@@ -330,6 +345,34 @@ export default function App() {
     setSelectedB({ name: match.b_name, id: match.b_id, match_type: 'CM' })
     setEditingMatchIndex(index)
     setViewingAutoMatch(null)
+  }, [])
+
+  const handleFinalize = useCallback(async () => {
+    setFinalizeStatus({ message: 'Generating...' })
+    try {
+      const result = await finalizeMatches()
+      const getFilename = (path: string) => path.split('/').pop() || ''
+      setFinalizeStatus({
+        message: `${result.manual_matches_applied} manual matches applied`,
+        downloads: [
+          {
+            name: 'Results',
+            url: `/api/download/${encodeURIComponent(getFilename(result.output))}`,
+          },
+          {
+            name: 'Top Matched',
+            url: `/api/download/${encodeURIComponent(getFilename(result.top_matched))}`,
+          },
+          {
+            name: 'CUP Matched',
+            url: `/api/download/${encodeURIComponent(getFilename(result.cup_matched))}`,
+          },
+        ],
+      })
+    } catch (err) {
+      console.error('Failed to finalize:', err)
+      setFinalizeStatus({ message: 'Error: Failed to finalize matches' })
+    }
   }, [])
 
   const canLink = selectedA.size > 0 && selectedB !== null
@@ -354,10 +397,23 @@ export default function App() {
     return set
   }, [selectedA, autoMatchedANames])
 
-  // Filtered A names list
+  // Filtered A names list - always include relevant names when there's a B selection
   const displayedANames = useMemo(() => {
     if (showOnlyMatched && relevantANames.size > 0) {
+      // Filter mode: show only relevant names that exist in the current data
       return aNames.filter((n) => relevantANames.has(n))
+    }
+    if (relevantANames.size > 0) {
+      // Normal mode with B selection: show search results + relevant names
+      // Add relevant names that aren't already in the search results
+      const searchResultSet = new Set(aNames)
+      const additionalRelevant = Array.from(relevantANames).filter(
+        (n) => !searchResultSet.has(n)
+      )
+      // Put relevant names first, then the rest of search results
+      const relevantInResults = aNames.filter((n) => relevantANames.has(n))
+      const nonRelevantInResults = aNames.filter((n) => !relevantANames.has(n))
+      return [...relevantInResults, ...additionalRelevant, ...nonRelevantInResults]
     }
     return aNames
   }, [aNames, showOnlyMatched, relevantANames])
@@ -373,15 +429,64 @@ export default function App() {
     <div style={styles.container}>
       <div style={styles.header}>
         <div style={styles.logo}>CM</div>
-        <div style={styles.searchContainer}>
-          <input
-            type="text"
-            placeholder="Search company names..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={styles.searchInput}
-          />
-        </div>
+        {splitSearch ? (
+          <>
+            <div style={styles.searchContainer}>
+              <input
+                type="text"
+                placeholder="Search A names..."
+                value={searchA}
+                onChange={(e) => setSearchA(e.target.value)}
+                style={styles.searchInput}
+              />
+            </div>
+            <div style={styles.searchContainer}>
+              <input
+                type="text"
+                placeholder="Search B names..."
+                value={searchB}
+                onChange={(e) => setSearchB(e.target.value)}
+                style={styles.searchInput}
+              />
+            </div>
+          </>
+        ) : (
+          <div style={styles.searchContainer}>
+            <input
+              type="text"
+              placeholder="Search company names..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={styles.searchInput}
+            />
+          </div>
+        )}
+        <button
+          onClick={() => {
+            if (splitSearch) {
+              // Switching to single: carry over B (right-hand side) value
+              setSearch(searchB)
+            } else {
+              // Switching to split: copy single value to both
+              setSearchA(search)
+              setSearchB(search)
+            }
+            setSplitSearch(!splitSearch)
+          }}
+          style={{
+            padding: '12px 16px',
+            background: splitSearch ? '#0066cc' : '#f0f0f0',
+            color: splitSearch ? 'white' : '#333',
+            border: '1px solid #ddd',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            whiteSpace: 'nowrap',
+          }}
+          title={splitSearch ? 'Use single search' : 'Use separate search bars'}
+        >
+          {splitSearch ? '1' : '2'}
+        </button>
       </div>
 
       <div style={styles.columns}>
@@ -524,6 +629,45 @@ export default function App() {
       <div style={styles.matchesPanel}>
         <div style={styles.columnHeader}>
           <span>Manual Matches ({matches.length})</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {finalizeStatus && (
+              <span style={{ fontSize: '12px', color: finalizeStatus.message.startsWith('Error') ? '#ff4444' : '#28a745' }}>
+                {finalizeStatus.message}
+                {finalizeStatus.downloads && (
+                  <>
+                    {' - '}
+                    {finalizeStatus.downloads.map((dl, idx) => (
+                      <span key={dl.name}>
+                        {idx > 0 && ' | '}
+                        <a
+                          href={dl.url}
+                          download
+                          style={{ color: '#0066cc', textDecoration: 'underline' }}
+                        >
+                          {dl.name}
+                        </a>
+                      </span>
+                    ))}
+                  </>
+                )}
+              </span>
+            )}
+            <button
+              onClick={handleFinalize}
+              style={{
+                padding: '6px 12px',
+                background: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '600',
+              }}
+            >
+              Finalize
+            </button>
+          </div>
         </div>
         {matches.length === 0 ? (
           <div style={styles.emptyState}>No manual matches yet</div>

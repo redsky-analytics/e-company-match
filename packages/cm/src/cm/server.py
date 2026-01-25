@@ -195,6 +195,104 @@ def create_app(
             return {"success": True}
         raise HTTPException(status_code=404, detail="Match not found")
 
+    @app.get("/api/download/{filename}")
+    async def download_file(filename: str) -> FileResponse:
+        """Download a file from the results directory."""
+        if not results_path:
+            raise HTTPException(status_code=400, detail="No results path configured")
+        file_path = Path(results_path).parent / filename
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        return FileResponse(
+            file_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @app.post("/api/finalize")
+    async def finalize_matches() -> dict[str, Any]:
+        """Finalize matching results by applying manual matches."""
+        if not results_path or not Path(results_path).exists():
+            raise HTTPException(status_code=400, detail="No results file available")
+
+        # Load automatic matching results
+        results_df = pd.read_excel(results_path)
+
+        # Build a mapping from A name to manual match info
+        manual_matches = store.get_all()
+        a_to_manual: dict[str, tuple[str, str | None]] = {}
+        for match in manual_matches:
+            for a_name in match.a_names:
+                a_to_manual[a_name] = (match.b_name, match.b_id)
+
+        # Apply manual matches to results
+        updated_count = 0
+        for idx, row in results_df.iterrows():
+            a_name = row["A_name"]
+            if a_name in a_to_manual:
+                b_name, b_id = a_to_manual[a_name]
+                results_df.at[idx, "matched_CUP_NAME"] = b_name
+                results_df.at[idx, "matched_CUP_ID"] = b_id
+                results_df.at[idx, "decision"] = "MANUAL_MATCH"
+                results_df.at[idx, "score"] = 1.0
+                results_df.at[idx, "runner_up_score"] = None
+                results_df.at[idx, "reasons"] = "manual_match"
+                updated_count += 1
+
+        # Save finalized results
+        output_path = Path(results_path).parent / "finalized_matching_results.xlsx"
+        results_df.to_excel(output_path, index=False)
+
+        # Build mapping from finalized results: A_name -> (matched_CUP_NAME, matched_CUP_ID)
+        a_to_cup: dict[str, tuple[str | None, str | None]] = {}
+        cup_to_a: dict[str, list[str]] = {}
+        for _, row in results_df.iterrows():
+            a_name = row["A_name"]
+            cup_name = row.get("matched_CUP_NAME")
+            cup_id = row.get("matched_CUP_ID")
+            if pd.notna(cup_name):
+                a_to_cup[a_name] = (str(cup_name), str(cup_id) if pd.notna(cup_id) else None)
+                if cup_name not in cup_to_a:
+                    cup_to_a[cup_name] = []
+                cup_to_a[cup_name].append(a_name)
+
+        # Generate top_2000_unmapped_matched.xlsx
+        top_matched_df = top_df.copy()
+        top_matched_df["matched_CUP_NAME"] = top_matched_df["A"].apply(
+            lambda x: a_to_cup.get(x, (None, None))[0]
+        )
+        top_matched_df["matched_CUP_ID"] = top_matched_df["A"].apply(
+            lambda x: a_to_cup.get(x, (None, None))[1]
+        )
+        top_matched_path = Path(results_path).parent / "top_2000_unmapped_matched.xlsx"
+        top_matched_df.to_excel(top_matched_path, index=False)
+
+        # Generate CUP_raw_data_matched.xlsx
+        cup_matched_df = cup_df.copy()
+        cup_matched_df["matched_A_names"] = cup_matched_df["CUP_NAME"].apply(
+            lambda x: "; ".join(cup_to_a.get(x, [])) if pd.notna(x) else ""
+        )
+        cup_matched_path = Path(results_path).parent / "CUP_raw_data_matched.xlsx"
+        cup_matched_df.to_excel(cup_matched_path, index=False)
+
+        log.info(
+            "finalize_complete",
+            output=str(output_path),
+            top_matched=str(top_matched_path),
+            cup_matched=str(cup_matched_path),
+            total_rows=len(results_df),
+            manual_matches_applied=updated_count,
+        )
+
+        return {
+            "success": True,
+            "output": str(output_path),
+            "top_matched": str(top_matched_path),
+            "cup_matched": str(cup_matched_path),
+            "total_rows": len(results_df),
+            "manual_matches_applied": updated_count,
+        }
+
     # Serve static files if UI is built
     if ui_dist_path.exists():
         # Mount assets directory

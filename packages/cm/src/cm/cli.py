@@ -378,6 +378,61 @@ def cmd_grep(args: argparse.Namespace) -> None:
     uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="warning")
 
 
+def cmd_finalize(args: argparse.Namespace) -> None:
+    """Finalize matching results by applying manual matches."""
+    from pathlib import Path
+
+    log = structlog.get_logger()
+    log.info(
+        "finalize_start",
+        results=args.results,
+        matches=args.matches,
+        output=args.output,
+    )
+
+    # Load automatic matching results
+    results_df = pd.read_excel(args.results)
+    log.info("results_loaded", count=len(results_df))
+
+    # Load manual matches
+    store = ManualMatchStore(Path(args.matches))
+    store.load()
+    manual_matches = store.get_all()
+    log.info("manual_matches_loaded", count=len(manual_matches))
+
+    # Build a mapping from A name to manual match info
+    a_to_manual: dict[str, tuple[str, str | None]] = {}
+    for match in manual_matches:
+        for a_name in match.a_names:
+            a_to_manual[a_name] = (match.b_name, match.b_id)
+
+    # Apply manual matches to results
+    updated_count = 0
+    for idx, row in results_df.iterrows():
+        a_name = row["A_name"]
+        if a_name in a_to_manual:
+            b_name, b_id = a_to_manual[a_name]
+            results_df.at[idx, "matched_CUP_NAME"] = b_name
+            results_df.at[idx, "matched_CUP_ID"] = b_id
+            results_df.at[idx, "decision"] = "MANUAL_MATCH"
+            results_df.at[idx, "score"] = 1.0
+            results_df.at[idx, "runner_up_score"] = None
+            results_df.at[idx, "reasons"] = "manual_match"
+            updated_count += 1
+
+    # Save finalized results
+    results_df.to_excel(args.output, index=False)
+    log.info(
+        "finalize_complete",
+        output=args.output,
+        total_rows=len(results_df),
+        manual_matches_applied=updated_count,
+    )
+    print(f"Finalized results saved to {args.output}")
+    print(f"  Total rows: {len(results_df)}")
+    print(f"  Manual matches applied: {updated_count}")
+
+
 def cmd_clean(args: argparse.Namespace) -> None:
     """Generate cleaned versions of names with different normalization levels."""
     from cm.config import MatchConfig
@@ -523,6 +578,13 @@ def main() -> None:
     grep_parser.add_argument("--results", default="localdata/matching_results.xlsx", help="Path to matching results file (for showing automatic matches)")
     grep_parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
     grep_parser.set_defaults(func=cmd_grep)
+
+    # finalize subcommand
+    finalize_parser = subparsers.add_parser("finalize", parents=[parent_parser], help="Finalize matching results with manual matches")
+    finalize_parser.add_argument("--results", default="localdata/matching_results.xlsx", help="Path to automatic matching results")
+    finalize_parser.add_argument("--matches", default="localdata/manual_matches.json", help="Path to manual matches file")
+    finalize_parser.add_argument("--output", default="localdata/finalized_matching_results.xlsx", help="Output path for finalized results")
+    finalize_parser.set_defaults(func=cmd_finalize)
 
     args = parser.parse_args()
     configure_logging(args.log_level)

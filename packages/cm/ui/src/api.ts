@@ -66,3 +66,18 @@ export async function deleteMatch(index: number): Promise<void> {
   const res = await fetch(`/api/matches/${index}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Failed to delete match')
 }
+
+export interface FinalizeResult {
+  success: boolean
+  output: string
+  top_matched: string
+  cup_matched: string
+  total_rows: number
+  manual_matches_applied: number
+}
+
+export async function finalizeMatches(): Promise<FinalizeResult> {
+  const res = await fetch('/api/finalize', { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to finalize matches')
+  return res.json()
+}

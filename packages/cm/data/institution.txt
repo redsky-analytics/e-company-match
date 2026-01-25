@@ -49,3 +49,5 @@ equity
 credit
 lending
 savings
+securities
+sec

@@ -61,11 +61,11 @@ class AcronymConfig:
 @dataclass
 class NormalizationConfig:
     strip_prefix_designators: bool = False
-    strip_categories: list[str] = None  # --no <category> (e.g., ["location", "institution"])
+    strip_categories: list[str] = None  # --no <category> (e.g., ["location", "branch"])
 
     def __post_init__(self) -> None:
         if self.strip_categories is None:
-            self.strip_categories = []
+            self.strip_categories = ["stopwords"]  # Always strip stopwords by default
 
 
 @dataclass

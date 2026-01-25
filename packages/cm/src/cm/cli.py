@@ -7,6 +7,7 @@ import structlog
 
 from cm.config import MatchConfig
 from cm.logging import configure_logging
+from cm.manual_matches import ManualMatchStore
 from cm.matcher import Matcher
 from cm.normalize import normalize
 
@@ -16,20 +17,19 @@ def _build_config(args: argparse.Namespace) -> MatchConfig:
     log = structlog.get_logger()
     config = MatchConfig()
 
-    # Handle --no <category> flags
-    categories = getattr(args, "no", None) or []
-    if categories:
+    # Handle --no <category> flags (adds to default categories)
+    extra_categories = getattr(args, "no", None) or []
+    if extra_categories:
         from cm.designators import get_available_categories, load_category_words
 
         available = get_available_categories()
-        for cat in categories:
+        for cat in extra_categories:
             if cat not in available:
                 print(f"Warning: category '{cat}' not found. Available: {', '.join(available)}")
-            else:
+            elif cat not in config.normalization.strip_categories:
+                config.normalization.strip_categories.append(cat)
                 words = load_category_words(cat)
                 log.info("strip_category_enabled", category=cat, word_count=len(words))
-
-        config.normalization.strip_categories = categories
 
     return config
 
@@ -76,23 +76,60 @@ def cmd_match(args: argparse.Namespace) -> None:
 
     log.info("files_loaded", a_count=len(a_names), b_count=len(b_names))
 
+    # Load manual matches if file exists
+    manual_match_map: dict[str, tuple[str, str | None]] = {}
+    if args.matches:
+        from pathlib import Path
+
+        store = ManualMatchStore(Path(args.matches))
+        store.load()
+        manual_match_map = store.get_a_to_b_map()
+        log.info("manual_matches_loaded", count=len(manual_match_map))
+
     matcher = _build_matcher(args)
     log.info("preprocess_b_start", b_count=len(b_names))
     matcher.preprocess_b(b_names)
     log.info("preprocess_b_done")
 
     if args.group:
-        _match_group(matcher, a_names, cup, args.output, args.show)
+        _match_group(matcher, a_names, cup, args.output, args.show, manual_match_map)
     else:
-        _match_individual(matcher, a_names, cup, args.output, args.show)
+        _match_individual(matcher, a_names, cup, args.output, args.show, manual_match_map)
 
 
 def _match_individual(
-    matcher: Matcher, a_names: list[str], cup: pd.DataFrame, output: str, show: bool
+    matcher: Matcher,
+    a_names: list[str],
+    cup: pd.DataFrame,
+    output: str,
+    show: bool,
+    manual_match_map: dict[str, tuple[str, str | None]] | None = None,
 ) -> None:
-    results = matcher.match_all(a_names)
+    manual_match_map = manual_match_map or {}
 
-    rows = []
+    # Separate A names into manual matches and those needing matching
+    manual_results: list[dict] = []
+    names_to_match: list[str] = []
+
+    for name in a_names:
+        if name in manual_match_map:
+            b_name, b_id = manual_match_map[name]
+            manual_results.append({
+                "A_name": name,
+                "matched_CUP_NAME": b_name,
+                "matched_CUP_ID": b_id,
+                "decision": "MANUAL_MATCH",
+                "score": 1.0,
+                "runner_up_score": None,
+                "reasons": "manual_match",
+            })
+        else:
+            names_to_match.append(name)
+
+    # Run matcher on remaining names
+    results = matcher.match_all(names_to_match) if names_to_match else []
+
+    rows = list(manual_results)  # Start with manual matches
     for r in results:
         rows.append({
             "A_name": r.a_name,
@@ -109,15 +146,22 @@ def _match_individual(
     if show:
         _show_matches(df_out)
 
-    _print_summary(df_out)
+    _print_summary(df_out, manual_count=len(manual_results))
     _print_stats(matcher)
     df_out.to_excel(output, index=False)
     print(f"\nSaved to: {output}")
 
 
 def _match_group(
-    matcher: Matcher, a_names: list[str], cup: pd.DataFrame, output: str, show: bool
+    matcher: Matcher,
+    a_names: list[str],
+    cup: pd.DataFrame,
+    output: str,
+    show: bool,
+    manual_match_map: dict[str, tuple[str, str | None]] | None = None,
 ) -> None:
+    manual_match_map = manual_match_map or {}
+
     # Group A names by exact value
     groups: dict[str, int] = {}
     for name in a_names:
@@ -126,11 +170,31 @@ def _match_group(
     unique_names = list(groups.keys())
     print(f"Unique A groups: {len(unique_names)} (from {len(a_names)} rows)")
 
+    # Separate unique names into manual matches and those needing matching
+    manual_results: list[dict] = []
+    names_to_match: list[str] = []
+
+    for name in unique_names:
+        if name in manual_match_map:
+            b_name, b_id = manual_match_map[name]
+            manual_results.append({
+                "A_name": name,
+                "group_size": groups[name],
+                "matched_CUP_NAME": b_name,
+                "matched_CUP_ID": b_id,
+                "decision": "MANUAL_MATCH",
+                "score": 1.0,
+                "runner_up_score": None,
+                "reasons": "manual_match",
+            })
+        else:
+            names_to_match.append(name)
+
     # Match each unique name (all members of a group share the same value,
     # so matching once per unique name suffices for exact-duplicate groups)
-    results = matcher.match_all(unique_names)
+    results = matcher.match_all(names_to_match) if names_to_match else []
 
-    rows = []
+    rows = list(manual_results)  # Start with manual matches
     for r in results:
         rows.append({
             "A_name": r.a_name,
@@ -148,7 +212,7 @@ def _match_group(
     if show:
         _show_matches(df_out)
 
-    _print_summary(df_out)
+    _print_summary(df_out, manual_count=len(manual_results))
     _print_stats(matcher)
     df_out.to_excel(output, index=False)
     print(f"\nSaved to: {output}")
@@ -186,18 +250,26 @@ def _print_stats(matcher: Matcher) -> None:
         print(f"LLM overrides: {s.llm_overrides}")
 
 
-def _print_summary(df: pd.DataFrame) -> None:
+def _print_summary(df: pd.DataFrame, manual_count: int = 0) -> None:
     # If group_size column exists, compute row-weighted counts
     if "group_size" in df.columns:
+        manual_rows = df.loc[df["decision"] == "MANUAL_MATCH", "group_size"].sum()
         match_rows = df.loc[df["decision"] == "MATCH", "group_size"].sum()
         no_match_rows = df.loc[df["decision"] == "NO_MATCH", "group_size"].sum()
         review_rows = df.loc[df["decision"] == "REVIEW", "group_size"].sum()
-        print(f"\nResults (rows): MATCH={match_rows}, NO_MATCH={no_match_rows}, REVIEW={review_rows}")
+        parts = [f"MATCH={match_rows}", f"NO_MATCH={no_match_rows}", f"REVIEW={review_rows}"]
+        if manual_rows > 0:
+            parts.insert(0, f"MANUAL_MATCH={manual_rows}")
+        print(f"\nResults (rows): {', '.join(parts)}")
     else:
+        manual_count_actual = (df["decision"] == "MANUAL_MATCH").sum()
         match_count = (df["decision"] == "MATCH").sum()
         no_match_count = (df["decision"] == "NO_MATCH").sum()
         review_count = (df["decision"] == "REVIEW").sum()
-        print(f"\nResults: MATCH={match_count}, NO_MATCH={no_match_count}, REVIEW={review_count}")
+        parts = [f"MATCH={match_count}", f"NO_MATCH={no_match_count}", f"REVIEW={review_count}"]
+        if manual_count_actual > 0:
+            parts.insert(0, f"MANUAL_MATCH={manual_count_actual}")
+        print(f"\nResults: {', '.join(parts)}")
 
 
 def cmd_dupes(args: argparse.Namespace) -> None:
@@ -275,6 +347,35 @@ def cmd_dupes(args: argparse.Namespace) -> None:
             print(f"\n  Total: {b_dupes.nunique()} duplicate names, {len(b_dupes)} total rows")
 
 
+def cmd_grep(args: argparse.Namespace) -> None:
+    """Launch the grep UI for manual matching."""
+    import webbrowser
+
+    import uvicorn
+
+    from cm.server import create_app
+
+    log = structlog.get_logger()
+    log.info(
+        "grep_server_start",
+        top=args.top,
+        cup=args.cup,
+        matches=args.matches,
+        port=args.port,
+    )
+
+    app = create_app(
+        top_path=args.top,
+        cup_path=args.cup,
+        matches_path=args.matches,
+    )
+
+    url = f"http://localhost:{args.port}"
+    print(f"Starting grep UI at {url}")
+    webbrowser.open(url)
+    uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="warning")
+
+
 def cmd_clean(args: argparse.Namespace) -> None:
     """Generate cleaned versions of names with different normalization levels."""
     from cm.config import MatchConfig
@@ -283,20 +384,21 @@ def cmd_clean(args: argparse.Namespace) -> None:
     top = pd.read_excel(args.top)
     cup = pd.read_excel(args.cup)
 
-    # Get available categories
-    categories = get_available_categories()
+    # Get available categories (exclude stopwords since it's now default)
+    all_categories = get_available_categories()
+    extra_categories = [c for c in all_categories if c != "stopwords"]
 
-    # Build configs: base, one per category, and all combined
-    config_base = MatchConfig()
+    # Build configs: base (includes stopwords), one per extra category, and all combined
+    config_base = MatchConfig()  # Already includes stopwords by default
 
     category_configs: dict[str, MatchConfig] = {}
-    for cat in categories:
-        cfg = MatchConfig()
-        cfg.normalization.strip_categories = [cat]
+    for cat in extra_categories:
+        cfg = MatchConfig()  # Starts with stopwords
+        cfg.normalization.strip_categories.append(cat)  # Add this category
         category_configs[cat] = cfg
 
     config_all = MatchConfig()
-    config_all.normalization.strip_categories = list(categories)
+    config_all.normalization.strip_categories = list(all_categories)
 
     def clean_names(names: list[str]) -> pd.DataFrame:
         rows = []
@@ -305,11 +407,11 @@ def cmd_clean(args: argparse.Namespace) -> None:
                 "original": name,
                 "normalized": normalize(name, config_base).core_string,
             }
-            # Add column for each category
-            for cat in categories:
+            # Add column for each extra category (stopwords already in normalized)
+            for cat in extra_categories:
                 row[f"no_{cat}"] = normalize(name, category_configs[cat]).core_string
             # Add combined column
-            if len(categories) > 1:
+            if len(extra_categories) > 0:
                 row["no_all"] = normalize(name, config_all).core_string
             rows.append(row)
         return pd.DataFrame(rows)
@@ -392,6 +494,7 @@ def main() -> None:
     match_parser.add_argument("--show", action="store_true", help="Display matches on screen")
     match_parser.add_argument("--top", default="localdata/top_2000_unmapped.xlsx", help="Path to top 2000 file")
     match_parser.add_argument("--cup", default="localdata/CUP_raw_data.xlsx", help="Path to CUP raw data file")
+    match_parser.add_argument("--matches", default="localdata/manual_matches.json", help="Path to manual matches file")
     match_parser.add_argument("--output", default="localdata/matching_results.xlsx", help="Output file path")
     match_parser.set_defaults(func=cmd_match)
 
@@ -409,6 +512,14 @@ def main() -> None:
     clean_parser.add_argument("--output-cup", default="localdata/cup_cleaned.xlsx", help="Output path for cleaned cup file")
     clean_parser.add_argument("--filter", "-f", help="Filter and display names matching this string (case-insensitive)")
     clean_parser.set_defaults(func=cmd_clean)
+
+    # grep subcommand
+    grep_parser = subparsers.add_parser("grep", parents=[parent_parser], help="Launch grep UI for manual matching")
+    grep_parser.add_argument("--top", default="localdata/top_2000_unmapped.xlsx", help="Path to top 2000 file")
+    grep_parser.add_argument("--cup", default="localdata/CUP_raw_data.xlsx", help="Path to CUP raw data file")
+    grep_parser.add_argument("--matches", default="localdata/manual_matches.json", help="Path to manual matches file")
+    grep_parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
+    grep_parser.set_defaults(func=cmd_grep)
 
     args = parser.parse_args()
     configure_logging(args.log_level)

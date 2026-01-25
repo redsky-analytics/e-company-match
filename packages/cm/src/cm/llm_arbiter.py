@@ -79,6 +79,7 @@ class LLMArbiter:
         b: NormalizedName,
         scored: ScoredCandidate,
         runner_up_score: float | None,
+        strip_categories: list[str] | None = None,
     ) -> tuple[Decision, LLMResponse]:
         """Call LLM to arbitrate an ambiguous pair.
 
@@ -98,7 +99,7 @@ class LLMArbiter:
             return "REVIEW", response
 
         # Build prompt
-        prompt = self._build_prompt(a, b, scored, runner_up_score)
+        prompt = self._build_prompt(a, b, scored, runner_up_score, strip_categories)
         log.debug("llm_prompt_built", a_core=a.core_string, b_core=b.core_string)
 
         # Call LLM
@@ -137,6 +138,7 @@ class LLMArbiter:
         b: NormalizedName,
         scored: ScoredCandidate,
         runner_up_score: float | None,
+        strip_categories: list[str] | None = None,
     ) -> str:
         evidence = {
             "name_a_original": a.original,
@@ -159,10 +161,21 @@ class LLMArbiter:
             },
         }
 
+        # Build instructions about ignored categories
+        ignore_instruction = ""
+        if strip_categories:
+            categories_str = ", ".join(strip_categories)
+            ignore_instruction = (
+                f"\n\nIMPORTANT: The user has specified to IGNORE differences in: {categories_str}. "
+                f"When comparing these names, do NOT consider differences in {categories_str} "
+                "as evidence that the companies are different. Focus on the core business identity."
+            )
+
         return (
             "You are a company name matching expert. Determine if these two entries "
             "refer to the SAME company or DIFFERENT companies.\n\n"
-            f"Evidence:\n{json.dumps(evidence, indent=2)}\n\n"
+            f"Evidence:\n{json.dumps(evidence, indent=2)}"
+            f"{ignore_instruction}\n\n"
             "Respond with a JSON object:\n"
             '{"decision": "SAME|DIFFERENT|UNSURE", "confidence": 0.0-1.0, "reason": "short_label"}\n'
             "Only output the JSON object, nothing else."

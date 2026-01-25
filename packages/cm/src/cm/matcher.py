@@ -165,7 +165,8 @@ class Matcher:
                         score=round(sc.score, 4),
                     )
                     llm_decision, llm_response = self.arbiter.arbitrate(
-                        a, b_cand, sc, sc_runner
+                        a, b_cand, sc, sc_runner,
+                        strip_categories=self.config.normalization.strip_categories,
                     )
                     log.info(
                         "llm_arbitration_result",

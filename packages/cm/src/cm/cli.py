@@ -551,7 +551,7 @@ def main() -> None:
     match_parser.add_argument("--show", action="store_true", help="Display matches on screen")
     match_parser.add_argument("--top", default="localdata/top_2000_unmapped.xlsx", help="Path to top 2000 file")
     match_parser.add_argument("--cup", default="localdata/CUP_raw_data.xlsx", help="Path to CUP raw data file")
-    match_parser.add_argument("--matches", default="localdata/manual_matches.json", help="Path to manual matches file")
+    match_parser.add_argument("--matches", default="manual_matches.json", help="Path to manual matches file")
     match_parser.add_argument("--output", default="localdata/matching_results.xlsx", help="Output file path")
     match_parser.set_defaults(func=cmd_match)
 
@@ -574,7 +574,7 @@ def main() -> None:
     grep_parser = subparsers.add_parser("grep", parents=[parent_parser], help="Launch grep UI for manual matching")
     grep_parser.add_argument("--top", default="localdata/top_2000_unmapped.xlsx", help="Path to top 2000 file")
     grep_parser.add_argument("--cup", default="localdata/CUP_raw_data.xlsx", help="Path to CUP raw data file")
-    grep_parser.add_argument("--matches", default="localdata/manual_matches.json", help="Path to manual matches file")
+    grep_parser.add_argument("--matches", default="manual_matches.json", help="Path to manual matches file")
     grep_parser.add_argument("--results", default="localdata/matching_results.xlsx", help="Path to matching results file (for showing automatic matches)")
     grep_parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
     grep_parser.set_defaults(func=cmd_grep)
@@ -582,7 +582,7 @@ def main() -> None:
     # finalize subcommand
     finalize_parser = subparsers.add_parser("finalize", parents=[parent_parser], help="Finalize matching results with manual matches")
     finalize_parser.add_argument("--results", default="localdata/matching_results.xlsx", help="Path to automatic matching results")
-    finalize_parser.add_argument("--matches", default="localdata/manual_matches.json", help="Path to manual matches file")
+    finalize_parser.add_argument("--matches", default="manual_matches.json", help="Path to manual matches file")
     finalize_parser.add_argument("--output", default="localdata/finalized_matching_results.xlsx", help="Output path for finalized results")
     finalize_parser.set_defaults(func=cmd_finalize)
 

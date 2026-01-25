@@ -50,7 +50,7 @@ class EmbeddingConfig:
     enabled: bool = False
     ann_neighbors: int = 100
     cache_dir: str = ".cm_cache/embeddings"
-    batch_size: int = 100
+    batch_size: int = 250  # Vertex AI limit: 250 texts per request
 
 
 @dataclass
@@ -61,7 +61,11 @@ class AcronymConfig:
 @dataclass
 class NormalizationConfig:
     strip_prefix_designators: bool = False
-    plus_to_and: bool = True
+    strip_categories: list[str] = None  # --no <category> (e.g., ["location", "institution"])
+
+    def __post_init__(self) -> None:
+        if self.strip_categories is None:
+            self.strip_categories = []
 
 
 @dataclass

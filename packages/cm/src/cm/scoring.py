@@ -93,17 +93,9 @@ def score_pair(
 
     features["numeric_penalty"] = penalty
 
-    # 5. Short-name guardrail (use original core_tokens length, not effective)
-    min_core_len = min(len(a.core_tokens), len(b.core_tokens))
-    short_penalty = 0.0
-    if min_core_len <= 1:
-        short_penalty = penalties.short_name_guardrail
-        reasons.append("short_name_guardrail")
-    features["short_name_penalty"] = short_penalty
-
-    # 6. Semantic similarity (optional)
+    # 5. Semantic similarity (optional)
     semantic_score = 0.0
-    if embedding_cosine is not None and min_core_len > 1:
+    if embedding_cosine is not None:
         semantic_score = max(0.0, embedding_cosine)
         if semantic_score >= 0.85:
             reasons.append("semantic_boost")
@@ -122,7 +114,7 @@ def score_pair(
         active_weight_sum += weights.acronym_signal
         weighted_sum += weights.acronym_signal * acronym_score
 
-    has_semantic = embedding_cosine is not None and min_core_len > 1
+    has_semantic = embedding_cosine is not None
     if has_semantic and semantic_score > 0:
         active_weight_sum += weights.semantic_similarity
         weighted_sum += weights.semantic_similarity * semantic_score
@@ -130,7 +122,7 @@ def score_pair(
     raw_score = weighted_sum / active_weight_sum if active_weight_sum > 0 else 0.0
 
     # Apply penalties
-    score = max(0.0, min(1.0, raw_score - penalty - short_penalty))
+    score = max(0.0, min(1.0, raw_score - penalty))
 
     # Constraint: semantic must not push across T_high without lexical evidence
     if has_semantic:
@@ -142,7 +134,7 @@ def score_pair(
             + weights.fuzzy_similarity * fuzzy_score
             + (weights.acronym_signal * acronym_score if acronym_score > 0 else 0)
         )
-        lexical_only_score = (lexical_sum / lexical_weight) - penalty - short_penalty
+        lexical_only_score = (lexical_sum / lexical_weight) - penalty
         if lexical_only_score < config.thresholds.t_high and score >= config.thresholds.t_high:
             score = config.thresholds.t_high - 0.01
             reasons.append("semantic_capped")

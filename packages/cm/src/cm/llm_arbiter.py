@@ -89,6 +89,7 @@ class LLMArbiter:
         # Check cache
         if cache_key in self._cache:
             response = self._cache[cache_key]
+            log.debug("llm_cache_hit", cache_key=cache_key)
             return self._map_response(response), response
 
         if self.provider is None:
@@ -98,10 +99,13 @@ class LLMArbiter:
 
         # Build prompt
         prompt = self._build_prompt(a, b, scored, runner_up_score)
+        log.debug("llm_prompt_built", a_core=a.core_string, b_core=b.core_string)
 
         # Call LLM
         try:
+            log.debug("llm_api_call_start")
             raw_response = self.provider.query(prompt)
+            log.debug("llm_api_call_done", raw_response=raw_response[:200])
             response = self._parse_response(raw_response)
         except Exception as e:
             log.warning("llm_call_failed", error=str(e))
@@ -111,6 +115,7 @@ class LLMArbiter:
 
         self._global_calls += 1
         self._cache[cache_key] = response
+        log.info("llm_call_complete", global_calls=self._global_calls)
 
         return self._map_response(response), response
 

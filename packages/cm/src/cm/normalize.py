@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
+from pathlib import Path
 
 from cm.acronyms import generate_acronym, is_collision, normalize_acronym_input
 from cm.config import MatchConfig
-from cm.designators import canonicalize_token, strip_designators
+from cm.designators import canonicalize_token, strip_designators, strip_word_categories
 from cm.types import NormalizedName
+
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+
+
+def _load_replacements() -> dict[str, str]:
+    """Load symbol/string replacements from replacements.json."""
+    path = DATA_DIR / "replacements.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+REPLACEMENTS: dict[str, str] = _load_replacements()
 
 
 def normalize(name: str, config: MatchConfig | None = None) -> NormalizedName:
@@ -28,10 +43,9 @@ def normalize(name: str, config: MatchConfig | None = None) -> NormalizedName:
     # Store normalized_text before further processing
     normalized_text = s
 
-    # 3. Symbol replacement
-    s = s.replace("&", " and ")
-    if config.normalization.plus_to_and:
-        s = s.replace("+", " and ")
+    # 3. Symbol/string replacements (from replacements.json)
+    for old, new in REPLACEMENTS.items():
+        s = s.replace(old, new)
 
     # 4. Tokenize by whitespace first (before punctuation removal)
     raw_split = s.split()
@@ -75,6 +89,36 @@ def normalize(name: str, config: MatchConfig | None = None) -> NormalizedName:
         removed_designators = []
         warnings.append("designator_strip_reverted_short_core")
 
+    # 9b. Strip category words if configured (e.g., --no location --no institution)
+    # Apply iteratively: after stripping category words, new designators
+    # may be exposed at the end (e.g., "hsbc continental europe sa germany" ->
+    # strip "germany" -> "hsbc continental europe sa" -> strip "sa")
+    removed_categories: list[str] = []
+    if config.normalization.strip_categories:
+        max_iterations = 10  # Safety limit
+        for _ in range(max_iterations):
+            prev_tokens = list(core_tokens)
+
+            # Strip words from configured categories
+            core_tokens, newly_removed = strip_word_categories(
+                core_tokens,
+                config.normalization.strip_categories,
+            )
+            removed_categories.extend(newly_removed)
+
+            # Re-strip designators (they may now be at the end)
+            # Use min_tokens=1 for aggressive stripping after category removal
+            core_tokens, newly_removed_designators = strip_designators(
+                core_tokens,
+                strip_prefix=config.normalization.strip_prefix_designators,
+                min_tokens=1,
+            )
+            removed_designators.extend(newly_removed_designators)
+
+            # Stop if no changes
+            if core_tokens == prev_tokens:
+                break
+
     if len(core_tokens) == 1:
         warnings.append("single_token_core")
 
@@ -105,6 +149,7 @@ def normalize(name: str, config: MatchConfig | None = None) -> NormalizedName:
     # 13. Build meta
     meta = {
         "removed_designators": removed_designators,
+        "removed_institution_location": removed_categories,
         "warnings": warnings,
         "notes": {},
     }

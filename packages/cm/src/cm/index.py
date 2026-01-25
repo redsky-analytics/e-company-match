@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+import structlog
+
 from cm.config import CandidateConfig
 from cm.types import Candidate, NormalizedName
+
+log = structlog.get_logger()
 
 
 class BlockingIndex:
@@ -25,6 +29,11 @@ class BlockingIndex:
                     continue
                 composite_key = f"{key_type}::{key_value}"
                 self._index[composite_key].add(b_id)
+        log.info(
+            "blocking_index_built",
+            names_indexed=len(names),
+            unique_keys=len(self._index),
+        )
 
     def get_name(self, b_id: int) -> NormalizedName:
         """Get the NormalizedName for a B ID."""

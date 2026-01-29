@@ -18,7 +18,12 @@ def _load_word_list(filename: str) -> set[str]:
 
 def _load_aliases() -> dict[str, str]:
     path = DATA_DIR / "designator_aliases.json"
-    return json.loads(path.read_text())
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return {}
 
 
 # Cache for dynamically loaded word lists

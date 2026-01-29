@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_DIR = Path(os.environ.get("CM_CONFIG_DATA") or "config_data")
 
 
 def _load_word_list(filename: str) -> set[str]:

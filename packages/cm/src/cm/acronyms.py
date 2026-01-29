@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 from cm.config import AcronymConfig
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_DIR = Path(os.environ.get("CM_CONFIG_DATA") or "config_data")
 
 
 def _load_collision_list() -> set[str]:

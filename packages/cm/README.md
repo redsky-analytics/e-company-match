@@ -275,7 +275,9 @@ uv run cm match --no institution --no location
 
 ## Configuration Files
 
-The `data/` directory contains configuration files that control normalization and matching behavior. All `.txt` files use a simple one-word-per-line format; `.json` files use key-value mappings.
+The `config_data/` directory contains configuration files that control normalization and matching behavior. All `.txt` files use a simple one-word-per-line format; `.json` files use key-value mappings.
+
+**Custom location:** Set the `CM_CONFIG_DATA` environment variable to override the default path.
 
 ### Word Lists (`.txt` files)
 

@@ -1,5 +1,6 @@
 """FastAPI server for the verify UI."""
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from pydantic import BaseModel
 from cm.manual_matches import ManualMatchStore
 
 log = structlog.get_logger()
+
+UI_DIST_DIR = Path(os.environ.get("CM_UI_DIST") or "ui/dist")
 
 
 class CreateMatchRequest(BaseModel):
@@ -133,9 +136,6 @@ def create_app(
     manual_b_names = {m.b_name for m in store.get_all()}
     auto_b_names = set(auto_matches.keys())
     review_b_names = set(review_matches.keys())
-
-    # Determine UI dist path
-    ui_dist_path = Path(__file__).parent.parent.parent / "ui" / "dist"
 
     @app.get("/api/names/a")
     async def get_a_names(q: str = "") -> list[str]:
@@ -343,25 +343,25 @@ def create_app(
         }
 
     # Serve static files if UI is built
-    if ui_dist_path.exists():
+    if UI_DIST_DIR.exists():
         # Mount assets directory
-        assets_path = ui_dist_path / "assets"
+        assets_path = UI_DIST_DIR / "assets"
         if assets_path.exists():
             app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
 
         @app.get("/")
         async def serve_index() -> FileResponse:
             """Serve the React app."""
-            return FileResponse(ui_dist_path / "index.html")
+            return FileResponse(UI_DIST_DIR / "index.html")
 
         # Catch-all for SPA routing
         @app.get("/{path:path}")
         async def serve_spa(path: str) -> FileResponse:
             """Serve the React app for all other paths."""
-            file_path = ui_dist_path / path
+            file_path = UI_DIST_DIR / path
             if file_path.exists() and file_path.is_file():
                 return FileResponse(file_path)
-            return FileResponse(ui_dist_path / "index.html")
+            return FileResponse(UI_DIST_DIR / "index.html")
     else:
         @app.get("/")
         async def no_ui() -> dict[str, str]:

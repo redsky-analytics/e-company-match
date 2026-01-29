@@ -1,8 +1,10 @@
 export interface NameEntry {
   name: string
   id: string | null
-  match_type: 'CM' | 'AM' | null  // CM = Custom/Manual, AM = Automatic
+  match_type: 'CM' | 'AM' | 'RV' | null  // CM = Custom/Manual, AM = Automatic, RV = Review
 }
+
+export type MatchTypeFilter = 'ALL' | 'CM' | 'AM' | 'RV' | 'NM'  // NM = Not Matched
 
 export interface ManualMatch {
   a_names: string[]
@@ -27,8 +29,11 @@ export async function fetchANames(query: string = ''): Promise<string[]> {
   return res.json()
 }
 
-export async function fetchBNames(query: string = ''): Promise<NameEntry[]> {
-  const url = query ? `/api/names/b?q=${encodeURIComponent(query)}` : '/api/names/b'
+export async function fetchBNames(query: string = '', filter: MatchTypeFilter = 'ALL'): Promise<NameEntry[]> {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  if (filter && filter !== 'ALL') params.set('filter', filter)
+  const url = params.toString() ? `/api/names/b?${params}` : '/api/names/b'
   const res = await fetch(url)
   if (!res.ok) throw new Error('Failed to fetch B names')
   return res.json()
@@ -79,5 +84,11 @@ export interface FinalizeResult {
 export async function finalizeMatches(): Promise<FinalizeResult> {
   const res = await fetch('/api/finalize', { method: 'POST' })
   if (!res.ok) throw new Error('Failed to finalize matches')
+  return res.json()
+}
+
+export async function fetchReviewANames(): Promise<string[]> {
+  const res = await fetch('/api/review-a-names')
+  if (!res.ok) throw new Error('Failed to fetch review A names')
   return res.json()
 }

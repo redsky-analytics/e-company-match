@@ -7,9 +7,11 @@ import {
   createMatch,
   deleteMatch,
   finalizeMatches,
+  fetchReviewANames,
   type NameEntry,
   type ManualMatch,
   type AutoMatch,
+  type MatchTypeFilter,
 } from './api'
 
 const styles = {
@@ -164,6 +166,23 @@ const styles = {
     background: '#ff9900',
     color: 'white',
   } as React.CSSProperties,
+  badgeRV: {
+    background: '#dc3545',
+    color: 'white',
+  } as React.CSSProperties,
+  filterButton: {
+    padding: '4px 8px',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    background: '#f5f5f5',
+    cursor: 'pointer',
+    fontSize: '11px',
+  } as React.CSSProperties,
+  filterButtonActive: {
+    background: '#0066cc',
+    color: 'white',
+    borderColor: '#0066cc',
+  } as React.CSSProperties,
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -190,6 +209,8 @@ export default function App() {
   const [aNames, setANames] = useState<string[]>([])
   const [bNames, setBNames] = useState<NameEntry[]>([])
   const [matches, setMatches] = useState<ManualMatch[]>([])
+  const [bFilter, setBFilter] = useState<MatchTypeFilter>('ALL')
+  const [reviewANames, setReviewANames] = useState<Set<string>>(new Set())
 
   const [selectedA, setSelectedA] = useState<Set<string>>(new Set())
   const [selectedB, setSelectedB] = useState<NameEntry | null>(null)
@@ -213,14 +234,14 @@ export default function App() {
   const effectiveSearchA = splitSearch ? debouncedSearchA : debouncedSearch
   const effectiveSearchB = splitSearch ? debouncedSearchB : debouncedSearch
 
-  // Load data on search change
+  // Load data on search or filter change
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
       try {
         const [a, b] = await Promise.all([
           fetchANames(effectiveSearchA),
-          fetchBNames(effectiveSearchB),
+          fetchBNames(effectiveSearchB, bFilter),
         ])
         setANames(a)
         setBNames(b)
@@ -231,11 +252,12 @@ export default function App() {
       }
     }
     loadData()
-  }, [effectiveSearchA, effectiveSearchB])
+  }, [effectiveSearchA, effectiveSearchB, bFilter])
 
-  // Load matches on mount
+  // Load matches and review A names on mount
   useEffect(() => {
     fetchMatches().then(setMatches).catch(console.error)
+    fetchReviewANames().then((names) => setReviewANames(new Set(names))).catch(console.error)
   }, [])
 
   const handleAToggle = useCallback((name: string) => {
@@ -273,11 +295,11 @@ export default function App() {
       return
     }
 
-    // No manual match, check for automatic match
+    // No manual match, check for automatic or review match
     setEditingMatchIndex(null)
 
-    if (entry.match_type === 'AM') {
-      // Fetch automatic match details and pre-select the A names for editing
+    if (entry.match_type === 'AM' || entry.match_type === 'RV') {
+      // Fetch automatic/review match details and pre-select the A names for editing
       const autoMatch = await fetchAutoMatch(entry.name)
       if (autoMatch) {
         setViewingAutoMatch(autoMatch)
@@ -306,7 +328,7 @@ export default function App() {
       )
       const [newMatches, newBNames] = await Promise.all([
         fetchMatches(),
-        fetchBNames(effectiveSearchB),
+        fetchBNames(effectiveSearchB, bFilter),
       ])
       setMatches(newMatches)
       setBNames(newBNames)
@@ -317,14 +339,14 @@ export default function App() {
     } catch (err) {
       console.error('Failed to create match:', err)
     }
-  }, [selectedA, selectedB, editingMatchIndex, effectiveSearchB])
+  }, [selectedA, selectedB, editingMatchIndex, effectiveSearchB, bFilter])
 
   const handleDeleteMatch = useCallback(async (index: number) => {
     try {
       await deleteMatch(index)
       const [newMatches, newBNames] = await Promise.all([
         fetchMatches(),
-        fetchBNames(effectiveSearchB),
+        fetchBNames(effectiveSearchB, bFilter),
       ])
       setMatches(newMatches)
       setBNames(newBNames)
@@ -337,7 +359,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to delete match:', err)
     }
-  }, [editingMatchIndex, effectiveSearchB])
+  }, [editingMatchIndex, effectiveSearchB, bFilter])
 
   const handleEditMatch = useCallback((match: ManualMatch, index: number) => {
     // Load the match into the selection state for editing
@@ -518,6 +540,7 @@ export default function App() {
                 const isAutoMatched = autoMatchedANames.has(name)
                 const isManualMatched = matchedANames.has(name)
                 const isRelevant = relevantANames.has(name)
+                const needsReview = reviewANames.has(name)
 
                 // Assign ref to first relevant item
                 const isFirstMatch = isRelevant && !firstMatchFound
@@ -531,7 +554,8 @@ export default function App() {
                       ...styles.listItem,
                       ...(isSelected ? styles.listItemSelected : {}),
                       ...(isAutoMatched && !isSelected ? styles.listItemAutoSelected : {}),
-                      opacity: isManualMatched && !isSelected && !isAutoMatched ? 0.5 : 1,
+                      ...(needsReview && !isSelected ? { background: '#fff0f0' } : {}),
+                      opacity: isManualMatched && !isSelected && !isAutoMatched && !needsReview ? 0.5 : 1,
                     }}
                     onClick={() => handleAToggle(name)}
                 >
@@ -542,10 +566,13 @@ export default function App() {
                     style={{ ...styles.checkbox, pointerEvents: 'none' }}
                   />
                   <span>{name}</span>
-                  {isAutoMatched && !isSelected && (
+                  {needsReview && !isSelected && (
+                    <span style={{ ...styles.badge, ...styles.badgeRV }}>RV</span>
+                  )}
+                  {isAutoMatched && !isSelected && !needsReview && (
                     <span style={{ ...styles.badge, ...styles.badgeAM }}>AM</span>
                   )}
-                  {isManualMatched && !isAutoMatched && !isSelected && (
+                  {isManualMatched && !isAutoMatched && !isSelected && !needsReview && (
                     <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#999' }}>
                       (matched)
                     </span>
@@ -563,10 +590,23 @@ export default function App() {
         <div style={styles.column}>
           <div style={styles.columnHeader}>
             <span>B Names</span>
-            <span style={styles.selectionInfo}>
-              {loading ? 'Loading...' : `${bNames.length} results`}
-              {selectedB && ' | 1 selected'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {(['ALL', 'CM', 'AM', 'RV', 'NM'] as MatchTypeFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setBFilter(f)}
+                  style={{
+                    ...styles.filterButton,
+                    ...(bFilter === f ? styles.filterButtonActive : {}),
+                  }}
+                >
+                  {f === 'ALL' ? 'All' : f === 'NM' ? 'None' : f}
+                </button>
+              ))}
+              <span style={{ ...styles.selectionInfo, marginLeft: '8px' }}>
+                {loading ? '...' : bNames.length}
+              </span>
+            </div>
           </div>
           <div style={styles.list}>
             {bNames.map((entry, idx) => (
@@ -589,7 +629,11 @@ export default function App() {
                   <span
                     style={{
                       ...styles.badge,
-                      ...(entry.match_type === 'CM' ? styles.badgeCM : styles.badgeAM),
+                      ...(entry.match_type === 'CM'
+                        ? styles.badgeCM
+                        : entry.match_type === 'RV'
+                        ? styles.badgeRV
+                        : styles.badgeAM),
                     }}
                   >
                     {entry.match_type}

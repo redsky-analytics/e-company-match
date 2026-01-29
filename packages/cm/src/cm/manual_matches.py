@@ -1,4 +1,4 @@
-"""Manual match storage for the grep UI."""
+"""Manual match storage for the verify UI."""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

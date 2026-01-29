@@ -347,8 +347,8 @@ def cmd_dupes(args: argparse.Namespace) -> None:
             print(f"\n  Total: {b_dupes.nunique()} duplicate names, {len(b_dupes)} total rows")
 
 
-def cmd_grep(args: argparse.Namespace) -> None:
-    """Launch the grep UI for manual matching."""
+def cmd_verify(args: argparse.Namespace) -> None:
+    """Launch the verify UI for manual matching."""
     import webbrowser
 
     import uvicorn
@@ -357,7 +357,7 @@ def cmd_grep(args: argparse.Namespace) -> None:
 
     log = structlog.get_logger()
     log.info(
-        "grep_server_start",
+        "verify_server_start",
         top=args.top,
         cup=args.cup,
         matches=args.matches,
@@ -373,7 +373,7 @@ def cmd_grep(args: argparse.Namespace) -> None:
     )
 
     url = f"http://localhost:{args.port}"
-    print(f"Starting grep UI at {url}")
+    print(f"Starting verify UI at {url}")
     webbrowser.open(url)
     uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="warning")
 
@@ -570,14 +570,14 @@ def main() -> None:
     clean_parser.add_argument("--filter", "-f", help="Filter and display names matching this string (case-insensitive)")
     clean_parser.set_defaults(func=cmd_clean)
 
-    # grep subcommand
-    grep_parser = subparsers.add_parser("grep", parents=[parent_parser], help="Launch grep UI for manual matching")
-    grep_parser.add_argument("--top", default="localdata/top_2000_unmapped.xlsx", help="Path to top 2000 file")
-    grep_parser.add_argument("--cup", default="localdata/CUP_raw_data.xlsx", help="Path to CUP raw data file")
-    grep_parser.add_argument("--matches", default="manual_matches.json", help="Path to manual matches file")
-    grep_parser.add_argument("--results", default="localdata/matching_results.xlsx", help="Path to matching results file (for showing automatic matches)")
-    grep_parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
-    grep_parser.set_defaults(func=cmd_grep)
+    # verify subcommand
+    verify_parser = subparsers.add_parser("verify", parents=[parent_parser], help="Launch verify UI for manual matching")
+    verify_parser.add_argument("--top", default="localdata/top_2000_unmapped.xlsx", help="Path to top 2000 file")
+    verify_parser.add_argument("--cup", default="localdata/CUP_raw_data.xlsx", help="Path to CUP raw data file")
+    verify_parser.add_argument("--matches", default="manual_matches.json", help="Path to manual matches file")
+    verify_parser.add_argument("--results", default="localdata/matching_results.xlsx", help="Path to matching results file (for showing automatic matches)")
+    verify_parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
+    verify_parser.set_defaults(func=cmd_verify)
 
     # finalize subcommand
     finalize_parser = subparsers.add_parser("finalize", parents=[parent_parser], help="Finalize matching results with manual matches")

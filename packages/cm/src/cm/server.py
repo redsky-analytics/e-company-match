@@ -1,4 +1,4 @@
-"""FastAPI server for the grep UI."""
+"""FastAPI server for the verify UI."""
 
 from pathlib import Path
 from typing import Any
@@ -82,34 +82,57 @@ def create_app(
     store = ManualMatchStore(Path(matches_path))
     store.load()
 
-    # Load automatic matches from results file if it exists
+    # Load automatic matches and review matches from results file if it exists
     auto_matches: dict[str, AutoMatchResponse] = {}  # b_name -> AutoMatchResponse
+    review_matches: dict[str, AutoMatchResponse] = {}  # b_name -> AutoMatchResponse
+    review_a_names: set[str] = set()  # A names that need review (no matched CUP)
     if results_path and Path(results_path).exists():
         log.info("loading_auto_matches", path=results_path)
         results_df = pd.read_excel(results_path)
-        # Group by matched_CUP_NAME for MATCH decisions (not MANUAL_MATCH)
+        # Group by matched_CUP_NAME for MATCH and REVIEW decisions
         for _, row in results_df.iterrows():
-            if row.get("decision") == "MATCH" and pd.notna(row.get("matched_CUP_NAME")):
+            decision = row.get("decision")
+            a_name = str(row["A_name"])
+
+            if decision == "REVIEW":
+                if pd.notna(row.get("matched_CUP_NAME")):
+                    # Review with a suggested match
+                    b_name = str(row["matched_CUP_NAME"])
+                    b_id = str(row["matched_CUP_ID"]) if pd.notna(row.get("matched_CUP_ID")) else None
+                    score = float(row["score"]) if pd.notna(row.get("score")) else 0.0
+                    if b_name not in review_matches:
+                        review_matches[b_name] = AutoMatchResponse(
+                            b_name=b_name,
+                            b_id=b_id,
+                            a_names=[],
+                            decision=decision,
+                            score=score,
+                        )
+                    if a_name not in review_matches[b_name].a_names:
+                        review_matches[b_name].a_names.append(a_name)
+                else:
+                    # Review without a suggested match - track A name
+                    review_a_names.add(a_name)
+            elif decision == "MATCH" and pd.notna(row.get("matched_CUP_NAME")):
                 b_name = str(row["matched_CUP_NAME"])
                 b_id = str(row["matched_CUP_ID"]) if pd.notna(row.get("matched_CUP_ID")) else None
-                a_name = str(row["A_name"])
                 score = float(row["score"]) if pd.notna(row.get("score")) else 0.0
-
                 if b_name not in auto_matches:
                     auto_matches[b_name] = AutoMatchResponse(
                         b_name=b_name,
                         b_id=b_id,
                         a_names=[],
-                        decision="MATCH",
+                        decision=decision,
                         score=score,
                     )
                 if a_name not in auto_matches[b_name].a_names:
                     auto_matches[b_name].a_names.append(a_name)
-        log.info("auto_matches_loaded", count=len(auto_matches))
+        log.info("auto_matches_loaded", count=len(auto_matches), review_count=len(review_matches), review_a_names=len(review_a_names))
 
     # Build sets for quick lookup of which B names have matches
     manual_b_names = {m.b_name for m in store.get_all()}
     auto_b_names = set(auto_matches.keys())
+    review_b_names = set(review_matches.keys())
 
     # Determine UI dist path
     ui_dist_path = Path(__file__).parent.parent.parent / "ui" / "dist"
@@ -123,8 +146,11 @@ def create_app(
         return [n for n in a_names_list if q_lower in n.lower()]
 
     @app.get("/api/names/b")
-    async def get_b_names(q: str = "") -> list[NameEntry]:
-        """Get B names with IDs, optionally filtered by query."""
+    async def get_b_names(q: str = "", filter: str = "") -> list[NameEntry]:
+        """Get B names with IDs, optionally filtered by query and match type.
+
+        Filter options: CM (manual), AM (auto-matched), RV (review), NM (not matched)
+        """
         # Refresh manual B names set (in case matches were added/removed)
         current_manual_b = {m.b_name for m in store.get_all()}
 
@@ -135,12 +161,25 @@ def create_app(
                 match_type = "CM"  # Custom/Manual match
             elif name in auto_b_names:
                 match_type = "AM"  # Automatic match
+            elif name in review_b_names:
+                match_type = "RV"  # Review required
             return NameEntry(name=name, id=e["id"], match_type=match_type)
 
-        if not q:
-            return [make_entry(e) for e in b_entries]
-        q_lower = q.lower()
-        return [make_entry(e) for e in b_entries if q_lower in e["name"].lower()]
+        # Build list with optional query filter
+        if q:
+            q_lower = q.lower()
+            entries = [make_entry(e) for e in b_entries if q_lower in e["name"].lower()]
+        else:
+            entries = [make_entry(e) for e in b_entries]
+
+        # Apply match type filter
+        if filter:
+            if filter == "NM":
+                entries = [e for e in entries if e.match_type is None]
+            else:
+                entries = [e for e in entries if e.match_type == filter]
+
+        return entries
 
     @app.get("/api/auto-matches")
     async def get_auto_matches() -> list[AutoMatchResponse]:
@@ -149,8 +188,18 @@ def create_app(
 
     @app.get("/api/auto-matches/{b_name}")
     async def get_auto_match(b_name: str) -> AutoMatchResponse | None:
-        """Get automatic match for a specific B name."""
-        return auto_matches.get(b_name)
+        """Get automatic match or review match for a specific B name."""
+        return auto_matches.get(b_name) or review_matches.get(b_name)
+
+    @app.get("/api/review-matches")
+    async def get_review_matches() -> list[AutoMatchResponse]:
+        """Get all review matches from results file."""
+        return list(review_matches.values())
+
+    @app.get("/api/review-a-names")
+    async def get_review_a_names() -> list[str]:
+        """Get A names that need review (no suggested match)."""
+        return list(review_a_names)
 
     @app.get("/api/matches")
     async def get_matches() -> list[MatchResponse]:

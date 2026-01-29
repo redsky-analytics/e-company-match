@@ -17,7 +17,6 @@ class ScoringWeights:
 class Penalties:
     numeric_mismatch: float = 0.30
     numeric_one_side_only: float = 0.10
-    short_name_guardrail: float = 0.25
 
 
 @dataclass

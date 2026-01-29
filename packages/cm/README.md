@@ -273,9 +273,22 @@ Example:
 uv run cm match --no institution --no location
 ```
 
+## Project Structure
+
+When running `cm`, the tool expects this directory structure in the current working directory:
+
+```
+your-project/
+├── config_data/     ← normalization config files (required)
+├── localdata/       ← input/output Excel files (default paths)
+└── manual_matches.json
+```
+
+The UI is bundled with the package and served automatically by `cm verify`. Set `CM_UI_DIST` to override the UI location.
+
 ## Configuration Files
 
-The `config_data/` directory contains configuration files that control normalization and matching behavior. All `.txt` files use a simple one-word-per-line format; `.json` files use key-value mappings.
+The `config_data/` directory (in cwd) contains configuration files that control normalization and matching behavior. All `.txt` files use a simple one-word-per-line format; `.json` files use key-value mappings.
 
 **Custom location:** Set the `CM_CONFIG_DATA` environment variable to override the default path.
 
@@ -303,7 +316,7 @@ To add words to a category, edit the corresponding `.txt` file (one word per lin
 
 Example — add "holdings" to the institution list:
 ```
-# data/institution.txt
+# config_data/institution.txt
 bank
 ...
 holdings

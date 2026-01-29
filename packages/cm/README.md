@@ -2,6 +2,9 @@
 
 A company name matching system that finds the best match for a given company name against a reference list. It combines deterministic scoring (token overlap, fuzzy similarity, acronym detection) with optional semantic embeddings and LLM arbitration via Google Gemini on Vertex AI.
 
+![Company Name Matching Pipeline](./docs/images/cm-pipeline.png)
+Automated matching pipeline.
+
 ## How It Works
 
 The matcher runs a 4-stage pipeline for each input name:
@@ -104,11 +107,204 @@ An Excel file with columns:
 | runner_up_score | Score of the second-best candidate |
 | reasons | Scoring breakdown |
 
-### Other Commands
+
+### Interactive UI for verification
+
+
+![Company Name Matching Pipeline](./docs/images/ui.png)
+Interactive matching UI.
+
+
+## Commands
+
+### `cm match`
+
+Run the matching pipeline to match company names from file A against reference names in file B.
 
 ```bash
-# Find duplicate names in both input files
+# Full pipeline with Gemini (embeddings + LLM arbitration)
+uv run cm match
+
+# Deterministic only (no Gemini calls)
+uv run cm match --no-gemini
+
+# Group-based matching (deduplicates identical A names first)
+uv run cm match --group
+
+# Display matches on screen
+uv run cm match --show
+
+# Custom file paths
+uv run cm match --top path/to/top.xlsx --cup path/to/cup.xlsx --output results.xlsx
+
+# Include manual matches from a JSON file
+uv run cm match --matches manual_matches.json
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top` | `localdata/top_2000_unmapped.xlsx` | Excel file with names to match (column `A`) |
+| `--cup` | `localdata/CUP_raw_data.xlsx` | Excel file with reference names (columns `CUP_NAME`, `CUP_ID`) |
+| `--output` | `localdata/matching_results.xlsx` | Output Excel file path |
+| `--matches` | `manual_matches.json` | Path to manual matches JSON file |
+| `--group` | off | Group identical A names and match once per unique name |
+| `--show` | off | Display matches on screen after processing |
+
+---
+
+### `cm dupes`
+
+Find duplicate names in both input files. Useful for data quality checks before matching.
+
+```bash
+# Find duplicates (exact match)
 uv run cm dupes
+
+# Find duplicates with normalization (groups by normalized form)
+uv run cm dupes --no institution --no location
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top` | `localdata/top_2000_unmapped.xlsx` | Excel file with names to check (column `A`) |
+| `--cup` | `localdata/CUP_raw_data.xlsx` | Excel file with reference names (column `CUP_NAME`) |
+
+---
+
+### `cm clean`
+
+Generate cleaned versions of names with different normalization levels. Outputs Excel files showing original names alongside various normalized forms.
+
+```bash
+# Generate cleaned files
+uv run cm clean
+
+# Filter and display names matching a string (instead of writing files)
+uv run cm clean --filter "bank"
+uv run cm clean -f "securities"
+
+# Custom input/output paths
+uv run cm clean --top input.xlsx --output-top cleaned_top.xlsx
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top` | `localdata/top_2000_unmapped.xlsx` | Excel file with names (column `A`) |
+| `--cup` | `localdata/CUP_raw_data.xlsx` | Excel file with reference names (column `CUP_NAME`) |
+| `--output-top` | `localdata/top_cleaned.xlsx` | Output path for cleaned top file |
+| `--output-cup` | `localdata/cup_cleaned.xlsx` | Output path for cleaned cup file |
+| `--filter`, `-f` | none | Filter and display names matching this string (case-insensitive) |
+
+---
+
+### `cm verify`
+
+Launch an interactive web UI for manual verification and matching. Opens a browser to review matches, search reference names, and create manual match overrides.
+
+```bash
+# Start the verify UI
+uv run cm verify
+
+# Custom port
+uv run cm verify --port 9000
+
+# Custom file paths
+uv run cm verify --top input.xlsx --cup reference.xlsx --results results.xlsx
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top` | `localdata/top_2000_unmapped.xlsx` | Excel file with names to match (column `A`) |
+| `--cup` | `localdata/CUP_raw_data.xlsx` | Excel file with reference names |
+| `--matches` | `manual_matches.json` | Path to manual matches file (read/write) |
+| `--results` | `localdata/matching_results.xlsx` | Path to automatic matching results (for displaying auto-matches) |
+| `--port` | `8765` | Server port |
+
+---
+
+### `cm finalize`
+
+Apply manual matches to automatic matching results. Creates a final output file with manual overrides merged in.
+
+```bash
+# Finalize with defaults
+uv run cm finalize
+
+# Custom paths
+uv run cm finalize --results auto_results.xlsx --matches manual.json --output final.xlsx
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--results` | `localdata/matching_results.xlsx` | Path to automatic matching results |
+| `--matches` | `manual_matches.json` | Path to manual matches JSON file |
+| `--output` | `localdata/finalized_matching_results.xlsx` | Output path for finalized results |
+
+---
+
+## Global Options
+
+These options are available for all commands:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--log-level` | `INFO` | Set logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `--no-gemini` | off | Disable Gemini providers (use deterministic matching only) |
+| `--no CATEGORY` | none | Strip words from a category during normalization (repeatable) |
+
+**Normalization categories** (use with `--no`):
+
+- `institution` — Bank, Trust, Securities, etc.
+- `location` — Country and city names
+- `stopwords` — Common words (The, And, Of, etc.) — enabled by default
+
+Example:
+```bash
+uv run cm match --no institution --no location
+```
+
+## Configuration Files
+
+The `data/` directory contains configuration files that control normalization and matching behavior. All `.txt` files use a simple one-word-per-line format; `.json` files use key-value mappings.
+
+### Word Lists (`.txt` files)
+
+| File | Purpose |
+|------|---------|
+| `stopwords.txt` | Common words stripped during normalization (`the`, `of`, `and`, `for`, `a`, `an`). Always applied. |
+| `designators_global.txt` | Legal entity suffixes stripped from all names (`inc`, `corp`, `ltd`, `llc`, `gmbh`, `ag`, etc.). Always applied. |
+| `institution.txt` | Financial institution terms (`bank`, `capital`, `securities`, `fund`, `trust`, etc.). Stripped when `--no institution` is used. |
+| `location.txt` | Geographic terms (`usa`, `europe`, `asia`, `germany`, `apac`, `emea`, etc.). Stripped when `--no location` is used. |
+| `branch.txt` | Branch/business type words (similar to institution). Used for specialized matching scenarios. |
+| `acronym_collision.txt` | Short strings that commonly collide as false-positive acronyms (`abc`, `aaa`, `aab`). Excluded from acronym detection. |
+
+### JSON Configuration
+
+| File | Purpose |
+|------|---------|
+| `designator_aliases.json` | Maps abbreviations to canonical forms before stripping. Examples: `"inc."` → `"inc"`, `"l.l.c."` → `"llc"`, `"intl"` → `"international"`. |
+| `replacements.json` | Character replacements applied early in normalization. Currently maps `&` and `+` to `and`. |
+
+### Customization
+
+To add words to a category, edit the corresponding `.txt` file (one word per line, lowercase). Changes take effect on the next run.
+
+Example — add "holdings" to the institution list:
+```
+# data/institution.txt
+bank
+...
+holdings
 ```
 
 ## Programmatic Usage

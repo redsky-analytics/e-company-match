@@ -8,8 +8,8 @@ def test_basic_normalization():
     result = normalize("Apple Inc.")
     assert result.original == "Apple Inc."
     assert "apple" in result.core_tokens
-    # Safety rule: stripping "inc" would leave < 2 tokens, so it stays
-    assert result.core_string == "apple inc"
+    # Default config strips stopwords iteratively, which allows designator stripping
+    assert result.core_string == "apple"
 
 
 def test_unicode_normalization():
@@ -26,12 +26,16 @@ def test_casefold():
 def test_ampersand_replacement():
     result = normalize("Johnson & Johnson")
     assert "johnson" in result.core_tokens
-    assert "and" in result.core_tokens
+    # "and" is replaced but then stripped as a stopword
+    assert "and" in result.raw_tokens
+    assert "and" in result.meta["removed_institution_location"]
 
 
 def test_plus_replacement():
     result = normalize("A + B Technologies")
-    assert "and" in result.core_tokens
+    # "+" is replaced with "and" but then stripped as a stopword
+    assert "and" in result.raw_tokens
+    assert "and" in result.meta["removed_institution_location"]
 
 
 def test_punctuation_removal():

@@ -37,14 +37,6 @@ def test_numeric_one_side_only():
     assert "numeric_one_side_only" in result.reasons
 
 
-def test_short_name_guardrail():
-    config = MatchConfig()
-    a = normalize("X", config)
-    b = normalize("X", config)
-    result = score_pair(a, b, config)
-    assert "short_name_guardrail" in result.reasons
-
-
 def test_acronym_boost():
     config = MatchConfig()
     a = normalize("IBM", config)

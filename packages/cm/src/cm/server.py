@@ -15,7 +15,10 @@ from cm.manual_matches import ManualMatchStore
 
 log = structlog.get_logger()
 
-UI_DIST_DIR = Path(os.environ.get("CM_UI_DIST") or "ui/dist")
+UI_DIST_DIR = Path(
+    os.environ.get("CM_UI_DIST")
+    or Path(__file__).resolve().parent / "ui" / "dist"
+)
 
 
 class CreateMatchRequest(BaseModel):
